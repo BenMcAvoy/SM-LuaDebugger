@@ -1,0 +1,7 @@
+{
+    "name": "SM-LuaDebugger",
+    "version_number": "0.1.0",
+    "website_url": "https://github.com/BenMcAvoy/SM-LuaDebugger",
+    "description": "A Lua debugger for Scrap Mechanic. Hooks the game's Lua VM and embeds EmmyLuaDebugger so you can attach from your editor and step through Scrap Mechanic's Lua scripts.",
+    "dependencies": []
+}
