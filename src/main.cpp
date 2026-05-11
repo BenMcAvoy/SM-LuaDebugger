@@ -18,8 +18,8 @@ static HMODULE LoadEmbeddedDll(const std::uint8_t *data, std::size_t size)
     if (!GetTempFileNameW(tempDir, L"sml", 0, tempFile))
         return nullptr;
 
-    HANDLE h = CreateFileW(tempFile, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
-                           CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+    HANDLE h = CreateFileW(tempFile, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
     if (h == INVALID_HANDLE_VALUE)
         return nullptr;
 
@@ -27,13 +27,14 @@ static HMODULE LoadEmbeddedDll(const std::uint8_t *data, std::size_t size)
     if (!WriteFile(h, data, (DWORD)size, &written, nullptr) || written != size)
     {
         CloseHandle(h);
+        DeleteFileW(tempFile);
         return nullptr;
     }
-    FlushFileBuffers(h);
+    // Must release the write handle before LoadLibraryExW: creating an image
+    // section fails if another handle holds GENERIC_WRITE access to the file.
+    CloseHandle(h);
 
-    HMODULE mod = LoadLibraryExW(tempFile, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    CloseHandle(h); // unlinks the file; the mapped image stays loaded
-    return mod;
+    return LoadLibraryExW(tempFile, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
 }
 
 using LuaVM_Initialize_t = void *(*)(lua_State * *thisPtr, void **modOpenerLists, int envMode);
@@ -52,7 +53,8 @@ void *hk_BuildChunkName(void *unk, std::string *dst, const char **src)
     return dst;
 }
 
-void LoadEmmyCore(lua_State *L)
+// Returns true if the emmy module is left on top of the Lua stack.
+bool LoadEmmyCore(lua_State *L)
 {
     // Resolve emmy_core.dll once.
     if (!p_luaopen_emmy_core)
@@ -60,18 +62,24 @@ void LoadEmmyCore(lua_State *L)
         HMODULE emmy = LoadEmbeddedDll(emmy_core_dll, emmy_core_dll_size);
         if (emmy)
             p_luaopen_emmy_core = (luaopen_emmy_core_t)GetProcAddress(emmy, "luaopen_emmy_core");
-    }
-
-    if (p_luaopen_emmy_core)
-    {
-        lua_pushcfunction(L, p_luaopen_emmy_core);
-        if (lua_pcall(L, 0, 1, 0) != 0)
+        if (!p_luaopen_emmy_core)
         {
-            const char *err = lua_tostring(L, -1);
-            MessageBoxA(nullptr, err ? err : "luaopen_emmy_core failed", "SM Lua Debugger", MB_OK | MB_ICONERROR);
-            lua_pop(L, 1);
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Failed to load emmy_core.dll (LastError=%lu)", GetLastError());
+            MessageBoxA(nullptr, msg, "SM Lua Debugger", MB_OK | MB_ICONERROR);
+            return false;
         }
     }
+
+    lua_pushcfunction(L, p_luaopen_emmy_core);
+    if (lua_pcall(L, 0, 1, 0) != 0)
+    {
+        const char *err = lua_tostring(L, -1);
+        MessageBoxA(nullptr, err ? err : "luaopen_emmy_core failed", "SM Lua Debugger", MB_OK | MB_ICONERROR);
+        lua_pop(L, 1);
+        return false;
+    }
+    return true;
 }
 
 static void InjectIntoUnsafeEnv(lua_State *L)
@@ -129,9 +137,11 @@ void *hk_LuaVM_Initialize(lua_State **pL, void **modOpenerLists, int envMode)
     if (envMode != 0)
         return ret;
 
-    LoadEmmyCore(*pL);                             // pushes emmy
-    StartEmmyListenerOnce(*pL, "127.0.0.1", 9966); // reads emmy at top, stack-neutral
-    InjectIntoUnsafeEnv(*pL);                      // consumes emmy
+    if (LoadEmmyCore(*pL))                             // pushes emmy on success
+    {
+        StartEmmyListenerOnce(*pL, "127.0.0.1", 9966); // reads emmy at top, stack-neutral
+        InjectIntoUnsafeEnv(*pL);                      // consumes emmy
+    }
 
     return ret;
 }
