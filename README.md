@@ -2,6 +2,8 @@
 
 A Lua debugger for Scrap Mechanic. Hooks the game's Lua VM, embeds [EmmyLuaDebugger](https://github.com/EmmyLua/EmmyLuaDebugger), and exposes it to the in-game environment so you can attach a debugger from your editor and step through Scrap Mechanic's Lua scripts (and your own mod code).
 
+<img width="1920" height="1044" alt="image" src="https://github.com/user-attachments/assets/cb60b267-5ab6-491d-9ab7-d2c8db0c09cd" />
+
 ## Building
 
 You'll need [xmake](https://xmake.io/).
