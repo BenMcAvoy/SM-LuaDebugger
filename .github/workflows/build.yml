@@ -19,6 +19,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       sha256: ${{ steps.meta.outputs.sha256 }}
       tag_exists: ${{ steps.meta.outputs.tag_exists }}
+      attestation_url: ${{ steps.attest.outputs.attestation-url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +78,7 @@ jobs:
       # Signed SLSA build provenance for the zip and the dll. Anyone can verify
       # with: gh attestation verify <file> --repo <owner>/<repo>
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -133,19 +135,56 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.tag }}
-          name: ${{ needs.build.outputs.tag }}
+          name: SM-LuaDebugger ${{ needs.build.outputs.tag }}
           draft: true
           generate_release_notes: true
           body: |
-            Automated draft release for `${{ needs.build.outputs.tag }}` built from ${{ github.sha }}.
+            # SM-LuaDebugger ${{ needs.build.outputs.version }}
 
-            **Provenance:** every asset below has a signed SLSA build attestation. Verify with:
-            ```
+            A Lua debugger for Scrap Mechanic — hooks the game's Lua VM and embeds [EmmyLuaDebugger](https://github.com/EmmyLua/EmmyLuaDebugger) so you can attach from your editor and step through Scrap Mechanic's Lua scripts.
+
+            ## Install (recommended)
+
+            Use a Thunderstore-compatible mod manager. The mod auto-installs along with its dependencies, no manual injection setup needed:
+
+            - **[r2modman](https://thunderstore.io/package/ebkr/r2modman/)** — cross-platform GUI manager
+            - **[Gale](https://thunderstore.io/c/scrap-mechanic/p/Kesomannen/GaleModManager/)** — lightweight alternative
+            - Or grab it straight from the [Thunderstore page](https://thunderstore.io/c/scrap-mechanic/) and let your manager import it
+
+            ## Manual install
+
+            If you'd rather not use a mod manager:
+
+            1. Download `SM-LuaDebugger.zip` below.
+            2. Make sure [Rivet](https://thunderstore.io/c/scrap-mechanic/p/ReDoIngMods/Rivet/) is installed (this mod depends on it).
+            3. Extract the zip into your Scrap Mechanic mods folder following the layout your loader expects.
+
+            ## Usage
+
+            Once installed, the debugger listens on `127.0.0.1:9966`. A message box pops up to confirm it's ready, then attach from your editor (e.g. VSCode + the **EmmyLua** extension). See the [project README](https://github.com/${{ github.repository }}#usage) for editor setup details.
+
+            ---
+
+            <details>
+            <summary><b>Verifying this build (for the security-conscious)</b></summary>
+
+            Every asset here was built by GitHub Actions and signed with a SLSA build provenance attestation tied to commit [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}).
+
+            - **Attestation:** ${{ needs.build.outputs.attestation_url }}
+            - **SHA-256 (zip):** `${{ needs.build.outputs.sha256 }}`
+
+            Verify with the [GitHub CLI](https://cli.github.com/):
+            ```sh
             gh attestation verify SM-LuaDebugger.zip --repo ${{ github.repository }}
             gh attestation verify SM-LuaDebugger.dll --repo ${{ github.repository }}
             ```
 
-            **SHA-256 (zip):** `${{ needs.build.outputs.sha256 }}`
+            Or check the zip hash against `SHA256SUMS.txt`:
+            ```sh
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            </details>
           files: |
             SM-LuaDebugger.zip
             pkg/SHA256SUMS.txt
