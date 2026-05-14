@@ -71,6 +71,25 @@ Swap the `library` path for wherever you keep your Scrap Mechanic Lua stubs.
 - Calls `luaopen_emmy_core` against the game's Lua state, starts the TCP listener, and exposes `emmy` on `debug.emmy` (and `unsafe_env.debug.emmy` if that table exists).
 - Also hooks `BuildChunkName` so chunk names come through as full paths instead of Lua's truncated `"..."` form, which otherwise confuses EmmyLua's source resolution.
 
+## Verifying a release build
+
+Every push builds the DLL and a Thunderstore-ready zip in GitHub Actions, and every release asset is published with a **signed SLSA build provenance attestation** tied to the workflow run and commit that produced it. This means you can prove a given `SM-LuaDebugger.dll` came from this repo's CI and wasn't tampered with.
+
+To verify a downloaded asset (zip or DLL), install the [GitHub CLI](https://cli.github.com/) and run:
+
+```sh
+gh attestation verify SM-LuaDebugger.zip --repo BenMcAvoy/SM-LuaDebugger
+gh attestation verify SM-LuaDebugger.dll --repo BenMcAvoy/SM-LuaDebugger
+```
+
+A passing check confirms the file was built by this repository's `Build` workflow on a GitHub-hosted runner, against a specific commit SHA (printed in the output).
+
+Each release also includes a `SHA256SUMS.txt` so you can sanity-check the hash before importing the attestation:
+
+```sh
+sha256sum -c SHA256SUMS.txt
+```
+
 ## Acknowledgements
 
 - [EmmyLuaDebugger](https://github.com/EmmyLua/EmmyLuaDebugger), the actual debugger engine doing all the heavy lifting. This project is essentially glue to get it talking to Scrap Mechanic's Lua VM.

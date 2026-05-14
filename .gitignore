@@ -10,6 +10,9 @@ compile_commands.json
 emmy.dll.h
 .claude
 
+# Blender backups (keep .blend itself)
+*.blend[0-9]*
+
 # Local build/dev clutter
 .vs/
 SM-LuaDebugger/
