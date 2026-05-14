@@ -6,9 +6,10 @@ A Lua debugger for Scrap Mechanic. Hooks the game's Lua VM, embeds [EmmyLuaDebug
 
 ## Building
 
-You'll need [xmake](https://xmake.io/).
+You'll need [xmake](https://xmake.io/) and [Git LFS](https://git-lfs.com/) (the logo `.blend` source is stored in LFS).
 
 ```sh
+git lfs install # one-time, per machine, only needed for .blend file (not needed for compiling)
 git clone https://github.com/BenMcAvoy/SM-LuaDebugger.git
 cd SM-LuaDebugger
 xmake f -m release
