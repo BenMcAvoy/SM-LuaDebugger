@@ -9,3 +9,10 @@ build/
 compile_commands.json
 emmy.dll.h
 .claude
+
+# Local build/dev clutter
+.vs/
+SM-LuaDebugger/
+SM-LuaDebugger.zip
+docs/
+package/

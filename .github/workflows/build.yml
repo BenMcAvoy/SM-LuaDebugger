@@ -1,0 +1,151 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      sha256: ${{ steps.meta.outputs.sha256 }}
+      tag_exists: ${{ steps.meta.outputs.tag_exists }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Configure
+        run: xmake f -m release -a x64 -y
+
+      - name: Build
+        run: xmake -y
+
+      - name: Stage package
+        shell: pwsh
+        run: |
+          $stage = "package/SM-LuaDebugger"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item res/data/manifest.json $stage/
+          Copy-Item res/data/icon.png $stage/
+          Copy-Item res/data/README.md $stage/
+          $dll = Get-ChildItem -Path build -Recurse -Filter SM-LuaDebugger.dll | Select-Object -First 1
+          if (-not $dll) { throw "SM-LuaDebugger.dll not found under build/" }
+          Copy-Item $dll.FullName $stage/
+
+      - name: Create thunderstore zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path package/SM-LuaDebugger/* -DestinationPath dist/SM-LuaDebugger.zip -Force
+
+      - name: Read metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $manifest = Get-Content res/data/manifest.json | ConvertFrom-Json
+          $version = $manifest.version_number
+          $tag = "v$version"
+          $dllPath = "package/SM-LuaDebugger/SM-LuaDebugger.dll"
+          $zipPath = "dist/SM-LuaDebugger.zip"
+          $dllSha = (Get-FileHash $dllPath -Algorithm SHA256).Hash.ToLower()
+          $zipSha = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
+          "$dllSha  SM-LuaDebugger.dll"   | Out-File -Encoding ascii dist/SHA256SUMS.txt
+          "$zipSha  SM-LuaDebugger.zip"   | Out-File -Encoding ascii -Append dist/SHA256SUMS.txt
+          git fetch --tags --quiet
+          $tagExists = ((git tag --list $tag) -ne $null -and (git tag --list $tag).Trim() -ne "")
+          "version=$version"          | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
+          "tag=$tag"                  | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
+          "sha256=$zipSha"            | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
+          "tag_exists=$tagExists"     | Out-File -Encoding ascii -Append $env:GITHUB_OUTPUT
+          Write-Host "version=$version tag=$tag exists=$tagExists"
+          Write-Host "zip sha256=$zipSha"
+          Write-Host "dll sha256=$dllSha"
+
+      # Signed SLSA build provenance for the zip and the dll. Anyone can verify
+      # with: gh attestation verify <file> --repo <owner>/<repo>
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/SM-LuaDebugger.zip
+            package/SM-LuaDebugger/SM-LuaDebugger.dll
+
+      # Upload the staged folder directly so the artifact users download IS the
+      # thunderstore zip, not a zip-of-a-zip. (GitHub always wraps artifacts in
+      # one outer zip; uploading the folder contents makes that outer zip the
+      # package itself.)
+      - name: Upload thunderstore package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SM-LuaDebugger
+          path: package/SM-LuaDebugger/*
+          if-no-files-found: error
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SM-LuaDebugger-checksums
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.outputs.tag_exists == 'False'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SM-LuaDebugger
+          path: pkg
+
+      - name: Download checksums artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SM-LuaDebugger-checksums
+          path: pkg
+
+      - name: Repack thunderstore zip
+        run: |
+          cd pkg
+          zip -r ../SM-LuaDebugger.zip manifest.json icon.png README.md SM-LuaDebugger.dll
+          cd ..
+          sha256sum SM-LuaDebugger.zip
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
+          draft: true
+          generate_release_notes: true
+          body: |
+            Automated draft release for `${{ needs.build.outputs.tag }}` built from ${{ github.sha }}.
+
+            **Provenance:** every asset below has a signed SLSA build attestation. Verify with:
+            ```
+            gh attestation verify SM-LuaDebugger.zip --repo ${{ github.repository }}
+            gh attestation verify SM-LuaDebugger.dll --repo ${{ github.repository }}
+            ```
+
+            **SHA-256 (zip):** `${{ needs.build.outputs.sha256 }}`
+          files: |
+            SM-LuaDebugger.zip
+            pkg/SHA256SUMS.txt
